@@ -1,0 +1,105 @@
+---
+title: "Homework 3 - Mapping"
+author: "Gabrielle Clary"
+format: 
+  html:
+    self-contains: true
+editor: visual
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Data Source
+
+The UFO data set contains over 80,000 reports of UFO sightings over the last century. This data includes entries where the location of the sighting was not found or blank (0.8146%) or have an erroneous or blank time (8.0237%). ([Kaggle Link](https://www.kaggle.com/datasets/NUFORC/ufo-sightings?select=scrubbed.csv))
+
+```{r}
+# load data set and packages 
+library(ggplot2)
+library(dplyr)
+library(ggdendro)
+library(viridis)
+library(mapproj)
+library(tidyverse)
+library(usdata)
+library(plotly)
+
+setwd("~/Desktop/STAA566/Assignment3")
+ufo <- read.csv("complete.csv", header = T)
+# grab only data points for the US
+ufo <- ufo[ufo$country == "us",]
+# remove data points without a state & duration
+ufo <- ufo[!(is.na(ufo$state) | ufo$state ==""),]
+ufo <- ufo[!(is.na(ufo$duration..seconds.) | ufo$duration..seconds. ==""),]
+# convert state to upper case - for matching on US Map data later
+ufo$state <- toupper(ufo$state)
+```
+
+### Spatial Units Being Displayed
+
+In graph 1 - the total number of sightings in 2014 by state is being displayed.
+
+In graph 2 - the average duration of sighting in seconds by state in 2014 is being displayed.
+
+### What I am trying to communicate
+
+That just because a state has many sightings it doesn't mean that they have a higher duration (in seconds) of sightings. Also that despite previous beliefs, states on the coast have more sightings than the midwest states like Nebraska or Oklahoma.
+
+### What decisions I made and why I made them to best communicate the data
+
+I manually created a column for Year since originally we are given a Date & Time field combined. This is so we can display data for the most recent year in the data set.
+
+I also cleaned up any misentered data, it looked like given the data around those points, they somehow got coded as sequential serial numbers.
+
+## Code and final figure
+
+First graph - total number of sightings
+
+```{r}
+# get data summarizations
+ufoSummary <- ufo %>%
+  group_by(state, year) %>%
+  summarise(Total = n(), AvgDurSeconds = mean(duration..seconds.))
+
+# get cordinates for the map
+tmp_map <- map_data("state")
+# create a state abbreviation column since thats what is in our data set
+tmp_map$abbr <- usdata::state2abbr(tmp_map$region)
+us_states_ufo <- tmp_map %>%
+  mutate(region = str_to_title(region),
+         subregion = str_to_title(subregion),
+         abbr = str_to_upper(abbr)) %>% 
+  left_join(ufoSummary %>% filter(year == max(year)), by = c("abbr" = "state"))
+# double check the lift join worked as expected
+us_states_ufo %>% head(n=14)
+
+# build graph
+p_ufo_state <- ggplot(data = us_states_ufo,
+            mapping = aes(x = long, y = lat, group = group, fill = Total,
+                          text = paste("Total Number of UFO Sightings in 2014:", Total)))
+p_ufo_state <- p_ufo_state + geom_polygon(color="white")
+p_ufo_state <- p_ufo_state + ggdendro::theme_dendro()
+p_ufo_state <- p_ufo_state + scale_fill_viridis(option="magma", direction=-1)
+p_ufo_state <- p_ufo_state + guides(fill=guide_legend(title="Total Number of \nUFO Sightings in 2014"))
+p_ufo_state <- p_ufo_state + coord_map()
+
+ggplotly(p_ufo_state, tooltip = "text")
+```
+
+Second graph - average duration
+
+```{r}
+p_ufo_state_dur <- ggplot(data = us_states_ufo,
+            mapping = aes(x = long, y = lat, group = group, fill = AvgDurSeconds,
+                          text = paste("Average Duration of UFO Sightings in 2014:",
+                                       round(AvgDurSeconds), "seconds")))
+p_ufo_state_dur <- p_ufo_state_dur + geom_polygon(color="white")
+p_ufo_state_dur <- p_ufo_state_dur + ggdendro::theme_dendro()
+p_ufo_state_dur <- p_ufo_state_dur + scale_fill_viridis(option="magma", direction=-1)
+p_ufo_state_dur <- p_ufo_state_dur + guides(fill=guide_legend(title="Average Duration (in seconds) \nof UFO Sightings in 2014"))
+p_ufo_state_dur <- p_ufo_state_dur + coord_map()
+
+ggplotly(p_ufo_state_dur, tooltip = "text")
+```
